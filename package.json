@@ -1,0 +1,1 @@
+{"name":"ar-portal-editor","private":true,"version":"0.1.0","scripts":{"dev":"vite","build":"vite build"},"dependencies":{"@mediapipe/tasks-vision":"latest"},"devDependencies":{"vite":"latest"}}
