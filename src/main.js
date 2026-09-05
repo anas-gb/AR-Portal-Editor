@@ -1,159 +1,37 @@
 import "./style.css";
+import { FilesetResolver, HandLandmarker } from "@mediapipe/tasks-vision";
 
 const root = document.getElementById("app");
+root.innerHTML = `<div class="shell"><header class="topbar"><div class="brand">AR PORTAL EDITOR</div><div class="top-actions"><span class="badge" id="cameraBadge">Camera Off</span><button id="startBtn" class="btn primary">Start Camera</button><button id="helpBtn" class="btn">?</button></div></header><main class="workspace"><aside class="panel assets"><h2>Assets</h2><p>Choose an effect or upload your own visual.</p><div class="asset-grid" id="assetGrid"><button class="asset active" data-asset="energy">🌀<small>Energy</small></button><button class="asset" data-asset="magic">🔮<small>Magic</small></button><button class="asset" data-asset="neon">⭕<small>Neon</small></button><button class="asset" data-asset="fire">🔥<small>Fire</small></button><button class="asset" data-asset="spark">✨<small>Sparks</small></button><button class="asset" data-asset="lightning">⚡<small>Lightning</small></button><button class="asset" data-asset="smoke">💨<small>Smoke</small></button><button class="asset" data-asset="trail">〰️<small>Trail</small></button></div><label class="btn upload">Upload PNG / JPG / GIF<input id="upload" type="file" accept="image/png,image/jpeg,image/gif,image/webp"></label></aside><section class="canvas-panel panel"><div class="toolbar"><div><strong id="gestureText">Gesture: —</strong><span class="muted"> · <span id="handsText">0</span> hand(s)</span></div><div class="toolbar-actions"><button id="switchBtn" class="btn">Switch Camera</button><button id="clearBtn" class="btn">Clear</button></div></div><div class="stage" id="stage"><video id="video" autoplay playsinline muted></video><canvas id="canvas"></canvas><div class="empty" id="empty"><div class="empty-card"><div class="hand">🖐️</div><h1>Build your AR effect</h1><p>Start the camera to track your hands. Your selected effect follows the recognized gesture.</p><button id="emptyStart" class="btn primary">Start Camera</button></div></div><div class="stage-overlay"><span class="badge">Live Canvas</span><span class="badge" id="fps">FPS —</span></div><div class="camera-controls"><button id="shotBtn" class="btn">Screenshot</button><button id="recordBtn" class="btn">Start Recording</button></div></div><div class="mapping panel-mini"><div><strong>Gesture Mapping</strong><div class="muted" id="mapping">Pinch → Energy</div></div><div class="mapping-controls"><select id="gestureSelect"><option value="pinch">Pinch</option><option value="open">Open Hand</option><option value="fist">Fist</option><option value="peace">Peace</option></select><select id="assetSelect"><option value="energy">Energy</option><option value="magic">Magic</option><option value="neon">Neon</option><option value="fire">Fire</option><option value="spark">Sparks</option><option value="lightning">Lightning</option><option value="smoke">Smoke</option><option value="trail">Trail</option></select></div></div></section><aside class="panel properties"><h2>Properties</h2><label>Scale <output id="scaleOut">1.00</output></label><input id="scale" type="range" min=".2" max="2.5" step=".05" value="1"><label>Rotation <output id="rotationOut">0°</output></label><input id="rotation" type="range" min="0" max="360" value="0"><label>Opacity <output id="opacityOut">100%</output></label><input id="opacity" type="range" min="0" max="1" step=".05" value="1"><label>Glow</label><input id="glow" type="color" value="#20d5bd"><label class="check"><span>Two-hand mode</span><input id="twoHand" type="checkbox"></label><label class="check"><span>Mirror camera</span><input id="mirror" type="checkbox" checked></label><div class="status-list"><div><span>Camera</span><strong id="cameraStatus">Off</strong></div><div><span>Hands</span><strong id="handsStatus">0</strong></div><div><span>Effect</span><strong id="effectStatus">Energy</strong></div></div><button id="saveBtn" class="btn primary full">Save Project</button></aside></main><footer>MediaPipe hand tracking • Effects rendered locally in your browser</footer></div>`;
 
-root.innerHTML = `
-  <div class="shell">
-    <header class="topbar">
-      <div class="brand">AR PORTAL EDITOR</div>
-      <div class="top-actions">
-        <span class="badge" id="cameraBadge">Camera Off</span>
-        <button id="startBtn" class="btn primary">Start Camera</button>
-      </div>
-    </header>
-    <main class="workspace">
-      <aside class="panel assets">
-        <h2>Assets</h2>
-        <p>Pick an effect or upload an image/GIF.</p>
-        <div class="asset-grid" id="assetGrid">
-          <button class="asset active" data-asset="energy">🌀<small>Energy</small></button>
-          <button class="asset" data-asset="magic">🔮<small>Magic</small></button>
-          <button class="asset" data-asset="neon">⭕<small>Neon</small></button>
-          <button class="asset" data-asset="fire">🔥<small>Fire</small></button>
-          <button class="asset" data-asset="spark">✨<small>Sparks</small></button>
-          <button class="asset" data-asset="lightning">⚡<small>Lightning</small></button>
-          <button class="asset" data-asset="smoke">💨<small>Smoke</small></button>
-          <button class="asset" data-asset="trail">〰️<small>Trail</small></button>
-        </div>
-        <label class="btn upload">Upload PNG / JPG / GIF<input id="upload" type="file" accept="image/png,image/jpeg,image/gif,image/webp"></label>
-      </aside>
+const $=id=>document.getElementById(id);
+const effects={energy:{emoji:"🌀",color:"#20d5bd"},magic:{emoji:"🔮",color:"#a78bfa"},neon:{emoji:"⭕",color:"#38bdf8"},fire:{emoji:"🔥",color:"#ff7d43"},spark:{emoji:"✨",color:"#facc15"},lightning:{emoji:"⚡",color:"#fde047"},smoke:{emoji:"💨",color:"#cbd5e1"},trail:{emoji:"〰️",color:"#60a5fa"}};
+let stream=null,facing="user",raf=0,recording=false,recorder=null,chunks=[],customImage=null,asset="energy",handLandmarker=null,lastVideoTime=-1,lastTick=performance.now(),frames=0;
+const state={scale:1,rotation:0,opacity:1,glow:"#20d5bd",gesture:"pinch",mapped:"energy",twoHand:false,mirror:true};
 
-      <section class="canvas-panel panel">
-        <div class="toolbar">
-          <div><strong id="gestureText">Gesture: —</strong><span class="muted"> · <span id="handsText">0</span> hand(s)</span></div>
-          <div class="toolbar-actions">
-            <button id="switchBtn" class="btn">Switch Camera</button>
-            <button id="clearBtn" class="btn">Clear</button>
-          </div>
-        </div>
-        <div class="stage" id="stage">
-          <video id="video" autoplay playsinline muted></video>
-          <canvas id="canvas"></canvas>
-          <div class="empty" id="empty"><div class="empty-card"><div class="hand">🖐️</div><h1>Build your AR effect</h1><p>Start the camera. Your selected effect follows the active gesture.</p><button id="emptyStart" class="btn primary">Start Camera</button></div></div>
-          <div class="stage-overlay"><span class="badge">Live Canvas</span><span class="badge" id="fps">FPS —</span></div>
-          <div class="camera-controls"><button id="shotBtn" class="btn">Screenshot</button><button id="recordBtn" class="btn">Start Recording</button></div>
-        </div>
-        <div class="mapping panel-mini"><div><strong>Gesture Mapping</strong><div class="muted" id="mapping">Pinch → Energy</div></div><div class="mapping-controls"><select id="gestureSelect"><option value="pinch">Pinch</option><option value="open">Open Hand</option><option value="fist">Fist</option><option value="peace">Peace</option></select><select id="assetSelect"><option value="energy">Energy</option><option value="magic">Magic</option><option value="neon">Neon</option><option value="fire">Fire</option><option value="spark">Sparks</option><option value="lightning">Lightning</option><option value="smoke">Smoke</option><option value="trail">Trail</option></select></div></div>
-      </section>
+function updateLabels(){state.scale=Number($("scale").value);state.rotation=Number($("rotation").value);state.opacity=Number($("opacity").value);state.glow=$("glow").value;$("scaleOut").value=state.scale.toFixed(2);$("rotationOut").value=`${state.rotation}°`;$("opacityOut").value=`${Math.round(state.opacity*100)}%`;}
+function updateMapping(){state.gesture=$("gestureSelect").value;state.mapped=$("assetSelect").value;$("mapping").textContent=`${$("gestureSelect").selectedOptions[0].text} → ${$("assetSelect").selectedOptions[0].text}`;}
+function fitCanvas(){const r=$("stage").getBoundingClientRect(),d=Math.max(1,devicePixelRatio||1);$("canvas").width=Math.max(1,Math.round(r.width*d));$("canvas").height=Math.max(1,Math.round(r.height*d));$("canvas").style.width=`${r.width}px`;$("canvas").style.height=`${r.height}px`;}
+function clearCanvas(){const c=$("canvas"),x=c.getContext("2d"),d=Math.max(1,devicePixelRatio||1);x.setTransform(d,0,0,d,0,0);x.clearRect(0,0,c.clientWidth,c.clientHeight);}
+function cover(v,w,h){const vw=v.videoWidth||1280,vh=v.videoHeight||720,s=Math.max(w/vw,h/vh),dw=vw*s,dh=vh*s;return{x:(w-dw)/2,y:(h-dh)/2,w:dw,h:dh};}
+function distance(a,b){return Math.hypot(a.x-b.x,a.y-b.y);}
+function handPoint(hand){const p=hand[8],w=$("canvas").clientWidth,h=$("canvas").clientHeight;return{x:(state.mirror?1-p.x:p.x)*w,y:p.y*h};}
+function classify(hand){const l=hand;const pinch=distance(l[8],l[4])<Math.max(.045,distance(l[0],l[9])*.38);const open=[8,12,16,20].map(i=>distance(l[i],l[0])>distance(l[i-2],l[0])*1.12);const openCount=open.filter(Boolean).length;const peace=open[0]&&open[1]&&!open[2]&&!open[3];const fist=openCount<=1;return pinch?"pinch":peace?"peace":fist?"fist":openCount>=3?"open":"open";}
+function drawEffect(x,y,size){const c=$("canvas"),ctx=c.getContext("2d"),d=Math.max(1,devicePixelRatio||1),e=effects[asset]||effects.energy,s=size*state.scale;ctx.save();ctx.setTransform(d,0,0,d,0,0);ctx.translate(x,y);ctx.rotate(state.rotation*Math.PI/180);ctx.globalAlpha=state.opacity;ctx.shadowBlur=30;ctx.shadowColor=state.glow||e.color;ctx.textAlign="center";ctx.textBaseline="middle";if(customImage){ctx.drawImage(customImage,-s/2,-s/2,s,s);}else{ctx.font=`${Math.max(28,s)}px system-ui`;ctx.fillText(e.emoji,0,0);}ctx.restore();}
+function drawHands(hands){const c=$("canvas"),ctx=c.getContext("2d"),d=Math.max(1,devicePixelRatio||1),w=c.clientWidth,h=c.clientHeight;ctx.save();ctx.setTransform(d,0,0,d,0,0);ctx.strokeStyle="rgba(32,213,189,.65)";ctx.fillStyle="#20d5bd";ctx.lineWidth=2;for(const lm of hands){for(const [a,b] of [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]]){ctx.beginPath();ctx.moveTo((state.mirror?1-lm[a].x:lm[a].x)*w,lm[a].y*h);ctx.lineTo((state.mirror?1-lm[b].x:lm[b].x)*w,lm[b].y*h);ctx.stroke();}for(const p of lm){ctx.beginPath();ctx.arc((state.mirror?1-p.x:p.x)*w,p.y*h,3,0,Math.PI*2);ctx.fill();}}ctx.restore();}
+async function initTracker(){if(handLandmarker)return;const vision=await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm");handLandmarker=await HandLandmarker.createFromOptions(vision,{baseOptions:{modelAssetPath:"https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",delegate:"GPU"},runningMode:"VIDEO",numHands:2,minHandDetectionConfidence:.55,minHandPresenceConfidence:.55,minTrackingConfidence:.55});}
+function render(results){clearCanvas();const v=$("video"),c=$("canvas"),ctx=c.getContext("2d"),d=Math.max(1,devicePixelRatio||1),w=c.clientWidth,h=c.clientHeight;if(v.readyState<2)return;const box=cover(v,w,h);ctx.save();ctx.setTransform(d,0,0,d,0,0);if(state.mirror){ctx.translate(w,0);ctx.scale(-1,1)}ctx.globalAlpha=.96;ctx.drawImage(v,box.x,box.y,box.w,box.h);ctx.restore();const hands=results?.landmarks||[];$("handsText").textContent=hands.length;$("handsStatus").textContent=hands.length;const gestures=hands.map(classify);const active=hands.find((_,i)=>gestures[i]===state.gesture);$("gestureText").textContent=`Gesture: ${active?state.gesture:"none"}`;if(active)drawEffect(...Object.values(handPoint(active)),130);else if(!hands.length)$("gestureText").textContent="Gesture: none";drawHands(hands);if(state.twoHand&&hands.length>=2){const a=handPoint(hands[0]),b=handPoint(hands[1]);drawEffect((a.x+b.x)/2,(a.y+b.y)/2,Math.max(70,Math.min(190,distance(a,b)*.65)));}}
+async function start(){if(stream)return;if(!navigator.mediaDevices?.getUserMedia){alert("Camera access is not supported in this browser.");return;}try{await initTracker();stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:facing,width:{ideal:1280},height:{ideal:720}},audio:false});$("video").srcObject=stream;await $("video").play();$("empty").classList.add("hidden");$("cameraBadge").textContent="Camera Live";$("cameraStatus").textContent="Live";fitCanvas();loop();}catch(e){stream=null;$("cameraBadge").textContent="Camera Error";$("cameraStatus").textContent="Error";alert(`Camera/tracker failed: ${e.message}`);}}
+function stop(){if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}cancelAnimationFrame(raf);$("video").srcObject=null;$("empty").classList.remove("hidden");$("cameraBadge").textContent="Camera Off";$("cameraStatus").textContent="Off";$("handsText").textContent="0";$("handsStatus").textContent="0";$("gestureText").textContent="Gesture: —";clearCanvas();}
+async function switchCamera(){const on=!!stream;stop();facing=facing==="user"?"environment":"user";if(on)await start();}
+function loop(){cancelAnimationFrame(raf);const step=()=>{raf=requestAnimationFrame(step);const v=$("video");if(v.readyState>=2&&handLandmarker&&v.currentTime!==lastVideoTime){lastVideoTime=v.currentTime;try{render(handLandmarker.detectForVideo(v,performance.now()));}catch(e){console.warn("Hand tracking frame failed",e);}}frames++;const n=performance.now();if(n-lastTick>1000){$("fps").textContent=`FPS ${Math.round(frames*1000/(n-lastTick))}`;frames=0;lastTick=n;}};step();}
+function download(blob,name){const u=URL.createObjectURL(blob),a=document.createElement("a");a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),1000);}
+function screenshot(){const c=$("canvas");c.toBlob(b=>b&&download(b,`ar-portal-${Date.now()}.png`),"image/png");}
+function startRecording(){if(recording)return;if(!window.MediaRecorder){alert("Recording is not supported in this browser.");return;}const mime=["video/webm;codecs=vp9","video/webm;codecs=vp8","video/webm"].find(m=>MediaRecorder.isTypeSupported?.(m))||"";try{recorder=new MediaRecorder($("canvas").captureStream(30),mime?{mimeType:mime}:undefined);}catch(e){alert(`Recording failed: ${e.message}`);return;}chunks=[];recorder.ondataavailable=e=>e.data.size&&chunks.push(e.data);recorder.onstop=()=>download(new Blob(chunks,{type:recorder.mimeType||"video/webm"}),`ar-portal-${Date.now()}.webm`);recorder.start(200);recording=true;$("recordBtn").textContent="Stop Recording";}
+function stopRecording(){if(!recording)return;recording=false;recorder?.stop();$("recordBtn").textContent="Start Recording";}
+function save(){const data={...state};localStorage.setItem("ar-portal-project",JSON.stringify(data));$("saveBtn").textContent="Saved ✓";setTimeout(()=>$("saveBtn").textContent="Save Project",1200);}
+function load(){try{const d=JSON.parse(localStorage.getItem("ar-portal-project")||"null");if(!d)return;Object.assign(state,d);asset=state.mapped||"energy";$("scale").value=state.scale;$("rotation").value=state.rotation;$("opacity").value=state.opacity;$("glow").value=state.glow;$("gestureSelect").value=state.gesture;$("assetSelect").value=state.mapped;$("twoHand").checked=!!state.twoHand;$("mirror").checked=state.mirror!==false;document.querySelectorAll(".asset").forEach(b=>b.classList.toggle("active",b.dataset.asset===asset));}catch(e){console.warn("Could not load saved project",e);}}
 
-      <aside class="panel properties">
-        <h2>Properties</h2>
-        <label>Scale <output id="scaleOut">1.00</output></label><input id="scale" type="range" min=".2" max="2.5" step=".05" value="1">
-        <label>Rotation <output id="rotationOut">0°</output></label><input id="rotation" type="range" min="0" max="360" value="0">
-        <label>Opacity <output id="opacityOut">100%</output></label><input id="opacity" type="range" min="0" max="1" step=".05" value="1">
-        <label>Glow <input id="glow" type="color" value="#20d5bd"></label>
-        <label class="check"><span>Two-hand mode</span><input id="twoHand" type="checkbox"></label>
-        <label class="check"><span>Mirror camera</span><input id="mirror" type="checkbox" checked></label>
-        <div class="status-list"><div><span>Camera</span><strong id="cameraStatus">Off</strong></div><div><span>Hands</span><strong id="handsStatus">0</strong></div><div><span>Effect</span><strong id="effectStatus">Energy</strong></div></div>
-        <button id="saveBtn" class="btn primary full">Save Project</button>
-      </aside>
-    </main>
-    <footer>Browser hand tracking • Projects stay local in your browser</footer>
-  </div>`;
-
-const $ = (id) => document.getElementById(id);
-const effects = {energy:{emoji:"🌀",color:"#20d5bd"},magic:{emoji:"🔮",color:"#a78bfa"},neon:{emoji:"⭕",color:"#38bdf8"},fire:{emoji:"🔥",color:"#ff7d43"},spark:{emoji:"✨",color:"#facc15"},lightning:{emoji:"⚡",color:"#fde047"},smoke:{emoji:"💨",color:"#cbd5e1"},trail:{emoji:"〰️",color:"#60a5fa"}};
-let stream = null;
-let facing = "user";
-let raf = 0;
-let recording = false;
-let recorder = null;
-let chunks = [];
-let customImage = null;
-let asset = "energy";
-let lastTick = performance.now();
-let frames = 0;
-
-function updateLabels(){
-  $("scaleOut").value = Number($("scale").value).toFixed(2);
-  $("rotationOut").value = `${$("rotation").value}°`;
-  $("opacityOut").value = `${Math.round(Number($("opacity").value)*100)}%`;
-}
-
-function updateMapping(){
-  const g = $("gestureSelect").selectedOptions[0].text;
-  const a = $("assetSelect").selectedOptions[0].text;
-  $("mapping").textContent = `${g} → ${a}`;
-}
-
-function fitCanvas(){
-  const r = $("stage").getBoundingClientRect();
-  const dpr = Math.max(1, window.devicePixelRatio || 1);
-  $("canvas").width = Math.max(1, Math.floor(r.width*dpr));
-  $("canvas").height = Math.max(1, Math.floor(r.height*dpr));
-  $("canvas").style.width = `${r.width}px`;
-  $("canvas").style.height = `${r.height}px`;
-}
-
-function drawEffect(x,y,size){
-  const c=$("canvas"),ctx=c.getContext("2d");
-  const dpr=Math.max(1,window.devicePixelRatio||1); const w=c.clientWidth,h=c.clientHeight;
-  ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,w,h);
-  const e=effects[asset]||effects.energy;
-  ctx.save(); ctx.translate(x,y); ctx.rotate(Number($("rotation").value)*Math.PI/180); ctx.globalAlpha=Number($("opacity").value); const s=size*Number($("scale").value); ctx.shadowBlur=28; ctx.shadowColor=$("glow").value||e.color; ctx.textAlign="center"; ctx.textBaseline="middle";
-  if(customImage) ctx.drawImage(customImage,-s/2,-s/2,s,s); else {ctx.font=`${s}px system-ui`;ctx.fillText(e.emoji,0,0)}
-  ctx.restore();
-}
-
-function stopLoop(){cancelAnimationFrame(raf);}
-
-function detectGesture(){
-  if(!stream) return "—";
-  const map=["pinch","open","fist","peace"];
-  return map[Math.floor(performance.now()/2200)%map.length];
-}
-
-function loop(){
-  stopLoop();
-  const step=()=>{
-    raf=requestAnimationFrame(step); const c=$("canvas"),ctx=c.getContext("2d"),w=c.clientWidth,h=c.clientHeight; const dpr=Math.max(1,window.devicePixelRatio||1); ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,w,h);
-    if(stream && $("video").readyState>=2){
-      const mirror=$("mirror").checked; ctx.save(); if(mirror){ctx.translate(w,0);ctx.scale(-1,1)} ctx.globalAlpha=.95;ctx.drawImage($("video"),0,0,w,h);ctx.restore();
-      const g=detectGesture(); $("gestureText").textContent=`Gesture: ${g}`; $("handsText").textContent=$("twoHand").checked?"2":"1"; $("handsStatus").textContent=$("twoHand").checked?"2":"1"; drawOverlay(w,h,g);
-    } else {drawOverlay(w,h,"preview")}
-    frames++; const now=performance.now(); if(now-lastTick>1000){$("fps").textContent=`FPS ${Math.round(frames*1000/(now-lastTick))}`;frames=0;lastTick=now;}
-  };step();
-}
-
-function drawOverlay(w,h,gesture){
-  const c=$("canvas"),ctx=c.getContext("2d"),dpr=Math.max(1,window.devicePixelRatio||1);ctx.setTransform(dpr,0,0,dpr,0,0);ctx.globalAlpha=1;
-  if(gesture!=="preview"){
-    const pulse=1+Math.sin(performance.now()/180)*.06; drawEffect(w*.5,h*.53,120*pulse);
-    if($("twoHand").checked){ctx.save();ctx.globalAlpha=.35;ctx.strokeStyle=$("glow").value;ctx.lineWidth=2;ctx.beginPath();ctx.arc(w*.5,h*.53,85*pulse,0,Math.PI*2);ctx.stroke();ctx.restore();}
-  } else drawEffect(w*.5,h*.53,120);
-}
-
-async function start(){
-  if(!navigator.mediaDevices?.getUserMedia){alert("Camera access is not supported in this browser.");return;}
-  if(stream) return;
-  try{
-    stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:facing,width:{ideal:1280},height:{ideal:720}},audio:false});
-    $("video").srcObject=stream;$("video").style.transform=$("mirror").checked?"scaleX(-1)":"none";$("empty").classList.add("hidden");$("cameraBadge").textContent="Camera Live";$("cameraStatus").textContent="Live";loop();
-  }catch(e){$("cameraBadge").textContent="Camera Error";$("cameraStatus").textContent="Denied";alert(`Camera access failed: ${e.message}`)}
-}
-
-function stop(){if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}stopLoop();$("video").srcObject=null;$("empty").classList.remove("hidden");$("cameraBadge").textContent="Camera Off";$("cameraStatus").textContent="Off";$("handsStatus").textContent="0";$("handsText").textContent="0";$("gestureText").textContent="Gesture: —";}
-
-async function switchCamera(){const wasOn=!!stream;stop();facing=facing==='user'?'environment':'user';if(wasOn) await start();}
-
-function download(blob,name){const u=URL.createObjectURL(blob);const a=document.createElement("a");a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),1000);}
-function screenshot(){ $("canvas").toBlob(b=>b&&download(b,`ar-portal-${Date.now()}.png`),"image/png"); }
-function save(){const d={asset,scale:$("scale").value,rotation:$("rotation").value,opacity:$("opacity").value,glow:$("glow").value,gesture:$("gestureSelect").value,mapped:$("assetSelect").value,twoHand:$("twoHand").checked,mirror:$("mirror").checked};localStorage.setItem("ar-portal-project",JSON.stringify(d));$("saveBtn").textContent="Saved ✓";setTimeout(()=>$("saveBtn").textContent="Save Project",1200);}
-function load(){try{const d=JSON.parse(localStorage.getItem("ar-portal-project")||"null");if(!d)return;asset=d.asset||asset;$("scale").value=d.scale||1;$("rotation").value=d.rotation||0;$("opacity").value=d.opacity??1;$("glow").value=d.glow||"#20d5bd";$("gestureSelect").value=d.gesture||"pinch";$("assetSelect").value=d.mapped||"energy";$("twoHand").checked=!!d.twoHand;$("mirror").checked=d.mirror!==false;updateLabels();updateMapping();}catch{}}
-function startRecording(){if(recording)return;if(!window.MediaRecorder){alert("Recording is not supported in this browser.");return;}recorder=new MediaRecorder($("canvas").captureStream(30),{mimeType:"video/webm"});chunks=[];recorder.ondataavailable=e=>e.data.size&&chunks.push(e.data);recorder.onstop=()=>download(new Blob(chunks,{type:"video/webm"}),`ar-portal-${Date.now()}.webm`);recorder.start();recording=true;$("recordBtn").textContent="Stop Recording";}
-function stopRecording(){if(!recording)return;recording=false;recorder.stop();$("recordBtn").textContent="Start Recording";}
-
-$("startBtn").onclick=start;$("emptyStart").onclick=start;$("switchBtn").onclick=switchCamera;$("shotBtn").onclick=screenshot;$("saveBtn").onclick=save;$("recordBtn").onclick=()=>recording?stopRecording():startRecording();$("clearBtn").onclick=()=>{customImage=null;asset="energy";$("assetSelect").value="energy";$("effectStatus").textContent="Energy";document.querySelectorAll(".asset").forEach(b=>b.classList.toggle("active",b.dataset.asset==="energy"));updateMapping();};
-
-document.querySelectorAll(".asset").forEach(btn=>btn.onclick=()=>{asset=btn.dataset.asset;customImage=null;$("assetSelect").value=asset;$("effectStatus").textContent=effects[asset]?asset:"custom";document.querySelectorAll(".asset").forEach(b=>b.classList.toggle("active",b===btn));updateMapping();});
-$("assetSelect").onchange=()=>{asset=$("assetSelect").value;$("effectStatus").textContent=asset;updateMapping();};$("gestureSelect").onchange=updateMapping;["scale","rotation","opacity"].forEach(id=>$(id).oninput=updateLabels);$("mirror").onchange=()=>{$("video").style.transform=$("mirror").checked?"scaleX(-1)":"none"};$("upload").onchange=e=>{const f=e.target.files?.[0];if(!f)return;const img=new Image();img.onload=()=>{customImage=img;asset="custom";$("effectStatus").textContent="Custom";};img.src=URL.createObjectURL(f);};window.addEventListener("resize",fitCanvas);load();updateLabels();updateMapping();fitCanvas();
+$("startBtn").onclick=start;$("emptyStart").onclick=start;$("switchBtn").onclick=switchCamera;$("shotBtn").onclick=screenshot;$("recordBtn").onclick=()=>recording?stopRecording():startRecording();$("saveBtn").onclick=save;$("helpBtn").onclick=()=>alert("Gestures: pinch, open hand, fist, peace. Keyboard: C camera, S screenshot, R recording.");$("clearBtn").onclick=()=>{customImage=null;asset="energy";$("assetSelect").value="energy";$("effectStatus").textContent="Energy";document.querySelectorAll(".asset").forEach(b=>b.classList.toggle("active",b.dataset.asset==="energy"));updateMapping();};
+document.querySelectorAll(".asset").forEach(btn=>btn.onclick=()=>{asset=btn.dataset.asset;customImage=null;$("assetSelect").value=asset;$("effectStatus").textContent=asset;document.querySelectorAll(".asset").forEach(b=>b.classList.toggle("active",b===btn));updateMapping();});$("assetSelect").onchange=()=>{asset=$("assetSelect").value;$("effectStatus").textContent=asset;updateMapping();};$("gestureSelect").onchange=updateMapping;["scale","rotation","opacity","glow"].forEach(id=>$(id).oninput=updateLabels);$("twoHand").onchange=()=>state.twoHand=$("twoHand").checked;$("mirror").onchange=()=>{state.mirror=$("mirror").checked;$("video").style.transform=state.mirror?"scaleX(-1)":"none"};$("upload").onchange=e=>{const f=e.target.files?.[0];if(!f)return;const img=new Image();img.onload=()=>{customImage=img;asset="custom";$("effectStatus").textContent="Custom";};img.src=URL.createObjectURL(f);};
+window.addEventListener("resize",fitCanvas);window.addEventListener("keydown",e=>{if(e.target.matches("input,select,textarea"))return;const k=e.key.toLowerCase();if(k==="c")stream?stop():start();if(k==="s")screenshot();if(k==="r"){recording?stopRecording():startRecording();}});load();updateLabels();updateMapping();fitCanvas();
