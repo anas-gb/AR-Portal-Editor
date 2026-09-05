@@ -1,0 +1,1 @@
+document.getElementById('app').innerHTML=`<h1>AR Portal Editor</h1><p>Starter build with planned features: two-hand tracking, gestures, portal FX, GIF overlays, recording and downloads.</p><button id='start'>Start Camera</button>`;
