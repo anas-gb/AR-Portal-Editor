@@ -1,1 +1,1 @@
-placeholder
+AR Portal Editor source initialized.
